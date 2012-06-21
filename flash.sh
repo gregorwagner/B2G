@@ -114,7 +114,7 @@ case "$1" in
 "gecko")
 	$ADB remount &&
 	$ADB push $GECKO_OBJDIR/dist/b2g /system/b2g &&
-	$ADB shell 'if test -d $echo /data/b2g/mozilla/*.default/indexedDB; then mv $echo /data/b2g/mozilla/*.default/indexedDB /data/local/; fi'&&
+	$ADB shell 'if test -d $echo /data/b2g/mozilla/*.default/indexedDB && test ! -d /data/local/indexedDB; then mv $echo /data/b2g/mozilla/*.default/indexedDB /data/local/; fi'&&
 	make -C gaia install-settingsdb ADB="$ADB" &&
 	echo Restarting B2G &&
 	$ADB shell stop b2g &&
