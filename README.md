@@ -28,12 +28,23 @@ and talk to us on IRC:
 * autoconf-2.13
 * git
 * ccache
-* gcc/g++
+* gcc/g++ __4.6.3 or older__
 * bison
 * flex
 * 32bit ncurses
 * 32bit zlib
 * make
+
+Additionally, if you're building the emulator, you probably need the the Mesa
+implementation of OpenGL.  On Ubuntu, this is the __libgl1-mesa-dev__ package.
+
+Ubuntu 12.10 ships with gcc 4.7 by default, which causes build errors pretty
+early in the process.  To use gcc 4.6, edit .userconfig and add
+
+    export CC=gcc-4.6
+    export CXX=g++-4.6
+
+Of course, you'll need the g++-4.6 package installed.
 
 ### OSX
 
@@ -44,6 +55,12 @@ and talk to us on IRC:
   * gpg
   * ccache
   * autoconf-2.13 - brew install https://raw.github.com/Homebrew/homebrew-versions/master/autoconf213.rb
+
+Note: Some B2G subrepositories contain files whose names differ only in case.
+Amazingly, the build seems to work properly on OSX case-insensitive file
+systems, despite this.  But if you do |./repo status|, you'll see lots of
+spurrious "modified files" corresponding to these pairs of files whose names
+differ only in case.  Try not to worry about it.
 
 ## Configure
 
@@ -80,6 +97,8 @@ It can sometimes be useful to build against a different Gecko than the one speci
 
     GECKO_PATH=/path/to/mozilla-central
     GECKO_OBJDIR=/path/to/mozilla-central/objdir-gonk
+
+Note that if you switch your userconfig's gecko path, you need to rm -rf the objdir and rebuild.
 
 ## Build
 
@@ -147,3 +166,4 @@ To run specific tests (individual files, directories, or ini files):
 Specify the full path if you're using a different Gecko repo:
 
     ./test.sh /path/to/mozilla-central/dom/battery/test/marionette/test_battery.py
+

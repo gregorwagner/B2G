@@ -3,13 +3,8 @@
 REPO=./repo
 
 repo_sync() {
-	if [ "$GITREPO" = "$GIT_TEMP_REPO" ]; then
-		BRANCH="master"
-	else
-		BRANCH=$1
-	fi
 	rm -rf .repo/manifest* &&
-	$REPO init -u $GITREPO -b $BRANCH &&
+	$REPO init -u $GITREPO -b $BRANCH -m $1.xml &&
 	$REPO sync
 	ret=$?
 	if [ "$GITREPO" = "$GIT_TEMP_REPO" ]; then
@@ -33,56 +28,72 @@ case `uname` in
 	exit -1
 esac
 
+GITREPO=${GITREPO:-"git://github.com/mozilla-b2g/b2g-manifest"}
+BRANCH=${BRANCH:-v1-train}
+
 GIT_TEMP_REPO="tmp_manifest_repo"
 if [ -n "$2" ]; then
 	GITREPO=$GIT_TEMP_REPO
-	GITBRANCH="master"
 	rm -rf $GITREPO &&
 	git init $GITREPO &&
-	cp $2 $GITREPO/default.xml &&
+	cp $2 $GITREPO/$1.xml &&
 	cd $GITREPO &&
-	git add default.xml &&
+	git add $1.xml &&
 	git commit -m "manifest" &&
+	git branch -m $BRANCH &&
 	cd ..
-else
-	GITREPO="git://github.com/mozilla-b2g/b2g-manifest"
 fi
+
+echo MAKE_FLAGS=-j$((CORE_COUNT + 2)) > .tmp-config
+echo GECKO_OBJDIR=$PWD/objdir-gecko >> .tmp-config
+echo DEVICE_NAME=$1 >> .tmp-config
 
 case "$1" in
 "galaxy-s2")
-	echo DEVICE=galaxys2 > .config &&
-	repo_sync galaxy-s2 &&
-	(cd device/samsung/galaxys2 && ./extract-files.sh)
+	echo DEVICE=galaxys2 >> .tmp-config &&
+	repo_sync $1
 	;;
 
 "galaxy-nexus")
-	echo DEVICE=maguro > .config &&
-	repo_sync maguro &&
-	(cd device/samsung/maguro && ./download-blobs.sh)
+	echo DEVICE=maguro >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"optimus-l5")
+	echo DEVICE=m4 >> .tmp-config &&
+	repo_sync $1
 	;;
 
 "nexus-s")
-	echo DEVICE=crespo > .config &&
-	repo_sync crespo &&
-	(cd device/samsung/crespo && ./download-blobs.sh)
+	echo DEVICE=crespo >> .tmp-config &&
+	repo_sync $1
 	;;
 
-"otoro")
-	echo DEVICE=otoro > .config &&
-	repo_sync otoro &&
-	(cd device/qcom/otoro && ./extract-files.sh)
+"nexus-s-4g")
+	echo DEVICE=crespo4g >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"otoro"|"unagi")
+	echo DEVICE=$1 >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"pandaboard")
+	echo DEVICE=panda >> .tmp-config &&
+	repo_sync $1
 	;;
 
 "emulator")
-	echo DEVICE=generic > .config &&
-	echo LUNCH=full-eng >> .config &&
-	repo_sync master
+	echo DEVICE=generic >> .tmp-config &&
+	echo LUNCH=full-eng >> .tmp-config &&
+	repo_sync $1
 	;;
 
 "emulator-x86")
-	echo DEVICE=generic_x86 > .config &&
-	echo LUNCH=full_x86-eng >> .config &&
-	repo_sync master
+	echo DEVICE=generic_x86 >> .tmp-config &&
+	echo LUNCH=full_x86-eng >> .tmp-config &&
+	repo_sync emulator
 	;;
 
 *)
@@ -92,7 +103,10 @@ case "$1" in
 	echo - galaxy-s2
 	echo - galaxy-nexus
 	echo - nexus-s
+	echo - nexus-s-4g
 	echo - otoro
+	echo - unagi
+	echo - pandaboard
 	echo - emulator
 	echo - emulator-x86
 	exit -1
@@ -104,7 +118,6 @@ if [ $? -ne 0 ]; then
 	exit -1
 fi
 
-echo MAKE_FLAGS=-j$((CORE_COUNT + 2)) >> .config
-echo GECKO_OBJDIR=$PWD/objdir-gecko >> .config
+mv .tmp-config .config
 
 echo Run \|./build.sh\| to start building
