@@ -12,10 +12,8 @@ def main():
   #print 'Current seed is: ' + fuzzSeed
   rnd = Random(fuzzSeed)
 
-  maxX = 320
-  # The home key is around (44, 515) on unagi.
-  # Filed a followup bug (838267) for better key support.
-  maxY = 520
+  maxX = 480
+  maxY = 854
 
   if (args.steps):
     steps = int(args.steps)
@@ -26,7 +24,11 @@ def main():
   sleepAllowed = 1
   while (count <= steps):
     if count % 1000 == 0:
-      print 'tap 44 515 1 2000' # long home key for unagi
+      # home button
+      print 'keydown 102'
+      print 'sleep', rnd.randint(100, 3000)
+      print 'keyup 102'
+      print 'sleep 1'
       count = count + 1
       sleepAllowed = 1
       continue
