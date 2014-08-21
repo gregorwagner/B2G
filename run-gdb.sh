@@ -1,30 +1,74 @@
 #!/bin/bash
+#set -x
+
+get_pid_by_name() {
+    echo $($ADB shell "toolbox ps '$1' | (read header; read user pid rest; echo -n \$pid)")
+}
 
 SCRIPT_NAME=$(basename $0)
 . load-config.sh
 
-ADB=adb
-GDB=${GDB:-prebuilt/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/toolchain/arm-linux-androideabi-4.4.x/bin/arm-linux-androideabi-gdb}
+ADB=${ADB:-adb}
+if [ ! -f "`which \"$ADB\"`" ]; then
+	ADB=out/host/`uname -s | tr "[[:upper:]]" "[[:lower:]]"`-x86/bin/adb
+fi
+echo "ADB Location: " $ADB
+
+case $DEVICE in
+    generic_x86)
+        TARGET_ARCH=x86
+        TARGET_TRIPLE=i686-linux-android
+        ;;
+    *)
+        TARGET_ARCH=arm
+        TARGET_TRIPLE=arm-linux-androideabi
+        ;;
+esac
+
+HOST_OS=$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86
+
+if [ -z "${GDB}" ]; then
+   if [ -d prebuilt ]; then
+      GDB=prebuilt/${HOST_OS}/toolchain/${TARGET_TRIPLE}-4.4.x/bin/${TARGET_TRIPLE}-gdb
+   elif [ -d prebuilts ]; then
+      GDB=prebuilts/gcc/${HOST_OS}/${TARGET_ARCH}/${TARGET_TRIPLE}-4.7/bin/${TARGET_TRIPLE}-gdb
+      PYTHON_DIR=prebuilts/python/${HOST_OS}/2.7.5
+      if [ -d $PYTHON_DIR ]; then
+        export PYTHONHOME=$PYTHON_DIR
+      fi
+   else
+      echo "Not sure where gdb is located. Override using GDB= or fix the script."
+      exit 1
+   fi
+fi
+
 B2G_BIN=/system/b2g/b2g
-GDBINIT=/tmp/b2g.gdbinit.$(whoami)
+GDBINIT=/tmp/b2g.gdbinit.$(whoami).$$
 
 GONK_OBJDIR=out/target/product/$DEVICE
 SYMDIR=$GONK_OBJDIR/symbols
 
-GDBSERVER_PID=$($ADB shell 'toolbox ps gdbserver | (read header; read user pid rest; echo -n $pid)')
+GDBSERVER_PID=$(get_pid_by_name gdbserver)
 
 GDB_PORT=$((10000 + $(id -u) % 50000))
-if [ "$1" = "attach"  -a  -n "$2" ] ; then
+if [ "$1" = "vgdb"  -a  -n "$2" ] ; then
+   GDB_PORT="$2"
+elif [ "$1" = "attach"  -a  -n "$2" ] ; then
    B2G_PID=$2
    if [ -z "$($ADB ls /proc/$B2G_PID)" ] ; then
-      echo Error: PID $B2G_PID is invalid
-      exit 1;
+      ATTACH_TARGET=$B2G_PID
+      B2G_PID=$(get_pid_by_name "$B2G_PID")
+      if [ -z "$B2G_PID" ] ; then
+        echo Error: PID $ATTACH_TARGET is invalid
+        exit 1;
+      fi
+      echo "Found $ATTACH_TARGET PID: $B2G_PID"
    fi
    GDB_PORT=$((10000 + ($B2G_PID + $(id -u)) % 50000))
    # cmdline is null separated
    B2G_BIN=$($ADB shell cat /proc/$B2G_PID/cmdline | tr '\0' '\n' | head -1)
 else
-   B2G_PID=$($ADB shell 'toolbox ps b2g | (read header; read user pid rest; echo -n $pid)')
+   B2G_PID=$(get_pid_by_name b2g)
 fi
 
 for p in $GDBSERVER_PID ; do
@@ -44,7 +88,7 @@ if [ "$1" = "attach" ]; then
    fi
 
    $ADB shell gdbserver :$GDB_PORT --attach $B2G_PID &
-else
+elif [ "$1" != "vgdb" ]; then
    if [ -n "$1" ]; then
       B2G_BIN=$1
       shift
@@ -70,11 +114,24 @@ fi
 
 sleep 1
 echo "set solib-absolute-prefix $SYMDIR" > $GDBINIT
+echo "handle SIGPIPE nostop" >> $GDBINIT
 echo "set solib-search-path $GECKO_OBJDIR/dist/bin:$SYMDIR/system/lib:$SYMDIR/system/lib/hw:$SYMDIR/system/lib/egl:$SYMDIR/system/bin:$GONK_OBJDIR/system/lib:$GONK_OBJDIR/system/lib/egl:$GONK_OBJDIR/system/lib/hw:$GONK_OBJDIR/system/vendor/lib:$GONK_OBJDIR/system/vendor/lib/hw:$GONK_OBJDIR/system/vendor/lib/egl" >> $GDBINIT
-echo "target extended-remote :$GDB_PORT" >> $GDBINIT
+if [ "$1" == "vgdb" ] ; then
+  echo "target remote :$GDB_PORT" >> $GDBINIT
+else
+  echo "target extended-remote :$GDB_PORT" >> $GDBINIT
+fi
 
 PROG=$GECKO_OBJDIR/dist/bin/$(basename $B2G_BIN)
 [ -f $PROG ] || PROG=${SYMDIR}${B2G_BIN}
+
+if [[ "$-" == *x* ]]; then
+    # Since we got here, set -x was enabled near the top of the file. print
+    # out the contents of of the gdbinit file.
+    echo "----- Start of $GDBINIT -----"
+    cat $GDBINIT
+    echo "----- End of $GDBINIT -----"
+fi
 
 if [ "$SCRIPT_NAME" == "run-ddd.sh" ]; then
     echo "ddd --debugger \"$GDB -x $GDBINIT\" $PROG"

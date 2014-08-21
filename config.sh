@@ -1,11 +1,12 @@
 #!/bin/bash
 
-REPO=./repo
+REPO=${REPO:-./repo}
+sync_flags=""
 
 repo_sync() {
 	rm -rf .repo/manifest* &&
-	$REPO init -u $GITREPO -b $BRANCH -m $1.xml &&
-	$REPO sync
+	$REPO init -u $GITREPO -b $BRANCH -m $1.xml $REPO_INIT_FLAGS &&
+	$REPO sync $sync_flags $REPO_SYNC_FLAGS
 	ret=$?
 	if [ "$GITREPO" = "$GIT_TEMP_REPO" ]; then
 		rm -rf $GIT_TEMP_REPO
@@ -18,7 +19,8 @@ repo_sync() {
 
 case `uname` in
 "Darwin")
-	CORE_COUNT=`system_profiler SPHardwareDataType | grep "Cores:" | sed -e 's/[ a-zA-Z:]*\([0-9]*\)/\1/'`
+	# Should also work on other BSDs
+	CORE_COUNT=`sysctl -n hw.ncpu`
 	;;
 "Linux")
 	CORE_COUNT=`grep processor /proc/cpuinfo | wc -l`
@@ -29,7 +31,31 @@ case `uname` in
 esac
 
 GITREPO=${GITREPO:-"git://github.com/mozilla-b2g/b2g-manifest"}
-BRANCH=${BRANCH:-v1-train}
+BRANCH=${BRANCH:-master}
+
+while [ $# -ge 1 ]; do
+	case $1 in
+	-d|-l|-f|-n|-c|-q|-j*)
+		sync_flags="$sync_flags $1"
+		if [ $1 = "-j" ]; then
+			shift
+			sync_flags+=" $1"
+		fi
+		shift
+		;;
+	--help|-h)
+		# The main case statement will give a usage message.
+		break
+		;;
+	-*)
+		echo "$0: unrecognized option $1" >&2
+		exit 1
+		;;
+	*)
+		break
+		;;
+	esac
+done
 
 GIT_TEMP_REPO="tmp_manifest_repo"
 if [ -n "$2" ]; then
@@ -59,6 +85,21 @@ case "$1" in
 	repo_sync $1
 	;;
 
+"nexus-4")
+	echo DEVICE=mako >> .tmp-config &&
+	repo_sync nexus-4
+	;;
+
+"nexus-4-kk")
+	echo DEVICE=mako >> .tmp-config &&
+	repo_sync nexus-4-kk
+	;;
+
+"nexus-5")
+  echo DEVICE=hammerhead >> .tmp-config &&
+  repo_sync nexus-5
+  ;;
+
 "optimus-l5")
 	echo DEVICE=m4 >> .tmp-config &&
 	repo_sync $1
@@ -74,8 +115,39 @@ case "$1" in
 	repo_sync $1
 	;;
 
-"otoro"|"unagi")
+"otoro"|"unagi"|"keon"|"inari"|"leo"|"hamachi"|"peak"|"helix"|"wasabi"|"flatfish")
 	echo DEVICE=$1 >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"flame"|"flame-kk")
+	echo PRODUCT_NAME=flame >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"fugu")
+	echo DEVICE=fugu >> .tmp-config &&
+	echo LUNCH=fugu-eng >> .tmp-config &&
+	echo TARGET_HVGA_ENABLE=true >> .tmp-config &&
+	echo GONK_VERSION=SP7710_13A_W13.39.7 >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"tarako")
+	echo DEVICE=sp6821a_gonk >> .tmp-config &&
+	echo PRODUCT_NAME=sp6821a_gonk >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"tara")
+	echo DEVICE=sp8810ea >> .tmp-config &&
+	echo LUNCH=sp8810eabase-eng >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"dolphin")
+	echo DEVICE=scx15_sp7715ga >> .tmp-config &&
+	echo PRODUCT_NAME=scx15_sp7715gaplus >> .tmp-config &&
 	repo_sync $1
 	;;
 
@@ -84,31 +156,66 @@ case "$1" in
 	repo_sync $1
 	;;
 
-"emulator")
+"vixen")
+	echo DEVICE=vixen >> .tmp-config &&
+	echo PRODUCT_NAME=vixen >> .tmp-config &&
+	repo_sync $1
+	;;  
+
+"emulator"|"emulator-jb"|"emulator-kk")
 	echo DEVICE=generic >> .tmp-config &&
 	echo LUNCH=full-eng >> .tmp-config &&
 	repo_sync $1
 	;;
 
-"emulator-x86")
+"emulator-x86"|"emulator-x86-jb"|"emulator-x86-kk")
 	echo DEVICE=generic_x86 >> .tmp-config &&
 	echo LUNCH=full_x86-eng >> .tmp-config &&
-	repo_sync emulator
+	repo_sync $1
+	;;
+
+"flo")
+	echo DEVICE=flo >> .tmp-config &&
+	repo_sync $1
 	;;
 
 *)
-	echo Usage: $0 \(device name\)
+	echo "Usage: $0 [-cdflnq] (device name)"
+	echo "Flags are passed through to |./repo sync|."
 	echo
 	echo Valid devices to configure are:
 	echo - galaxy-s2
 	echo - galaxy-nexus
+	echo - nexus-4
+	echo - nexus-4-kk
+	echo - nexus-5
 	echo - nexus-s
 	echo - nexus-s-4g
+	echo - flo "(Nexus 7 2013)"
 	echo - otoro
 	echo - unagi
+	echo - inari
+	echo - keon
+	echo - peak
+	echo - leo
+	echo - hamachi
+	echo - helix
+	echo - wasabi
+	echo - fugu
+	echo - tarako
+	echo - tara
+	echo - dolphin
 	echo - pandaboard
+	echo - vixen
+	echo - flatfish
+	echo - flame
+	echo - flame-kk
 	echo - emulator
+	echo - emulator-jb
+	echo - emulator-kk
 	echo - emulator-x86
+	echo - emulator-x86-jb
+	echo - emulator-x86-kk
 	exit -1
 	;;
 esac

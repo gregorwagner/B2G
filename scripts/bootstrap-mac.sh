@@ -13,7 +13,7 @@ This script attempts to bootstrap a "minimal" OS X installation
 with the tools necessary to build Boot2Gecko.
 
 The only requirement for running this script should be XCode 4.x / 3.x,
-and either OS X 10.6 (Snow Leopard), 10.7 (Lion), or 10.8 (Mountain Lion).
+and either OS X 10.6+ (Snow Leopard).
 
 Usage: $0 [options]
 Options:
@@ -119,6 +119,13 @@ bootstrap_mac() {
         echo "Found yasm: $yasm"
     fi
 
+    cmake=`which cmake`
+    if [ $? -ne 0 ]; then
+        homebrew_formulas+=" cmake:cmake"
+    else
+        echo "Found cmake: $cmake"
+    fi
+
     found_autoconf213=1
     autoconf213=`which autoconf213`
     if [ $? -ne 0 ]; then
@@ -142,22 +149,43 @@ bootstrap_mac() {
         echo "Found autoconf-2.13: $autoconf213"
     fi
 
-    found_apple_gcc=0
-    check_apple_gcc
+    # We don't need additional toolchain since Mavericks (10.9)
+    if [[ $osx_version != "10.9" ]]; then
+        found_apple_gcc=0
+        check_apple_gcc
 
-    if [ $found_apple_gcc -eq 0 ]; then
-        # No Apple gcc, probably because newer Xcode 4.3 only installed LLVM-backed gcc
-        # Fall back to checking for / installing gcc-4.6 
+        if [ $found_apple_gcc -eq 0 ]; then
+            # No Apple gcc, probably because newer Xcode 4.3 only installed LLVM-backed gcc
+            # Fall back to checking for / installing gcc-4.6
 
-        found_gcc46=1
-        gcc46=`which gcc-4.6`
-        if [ $? -ne 0 ]; then
-            found_gcc46=0
-            gcc46_formula="https://raw.github.com/mozilla-b2g/B2G/master/scripts/homebrew/gcc-4.6.rb"
-            homebrew_formulas+=" gcc-4.6:$gcc46_formula"
-        else
-            echo "Found gcc-4.6: $gcc46"
+            found_gcc46=1
+            gcc46=`which gcc-4.6`
+            if [ $? -ne 0 ]; then
+                found_gcc46=0
+                gcc46_formula="https://raw.github.com/mozilla-b2g/B2G/master/scripts/homebrew/gcc-4.6.rb"
+                homebrew_formulas+=" gcc-4.6:$gcc46_formula"
+            else
+                echo "Found gcc-4.6: $gcc46"
+            fi
         fi
+    fi
+
+    gnutar=
+    for prog in gnutar gtar tar; do
+        _gnutar=`which $prog`
+        if [ $? -eq 0 ]; then
+            $_gnutar -c --owner=0 --group=0 --numeric-owner --mode=go-w -f - $this_dir > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                gnutar=$_gnutar
+                break
+            fi
+        fi
+    done
+
+    if [ ! -z "$gnutar" ]; then
+        echo ""Found GNU tar: $gnutar
+    else
+        homebrew_formulas+=" gnu-tar:gnu-tar"
     fi
 
     if [ ! -z "$homebrew_formulas" ]; then
@@ -208,22 +236,13 @@ bootstrap_mac() {
 }
 
 install_xcode() {
-  if [[ $osx_version == "10.8" ]]; then
-      # In Mountain Lion, you currently need a developer key to get Xcode 4.5.
-      # Let people know this. Once 10.8 is out, we should update to route to
-      # the Mac App Store.
-      echo "You will need to install Xcode 4.4 or Xcode 4.5 to build Boot to Gecko on "
-      prompt_question "Mac OS X 10.8. Would you like to visit the Mac Dev Center to download it? [Y/n] " Y
-      if [[ $answer = Y ]]; then
-        run_command open https://developer.apple.com/devcenter/mac
-      fi
-  elif [[ $osx_version == "10.7" ]]; then
-      # In Lion, we open the Mac App Store for Xcode 4.3.
+  if [ $osx_version \> "10.6" ]; then
+      # In OS X 10.7+, we open the Mac App Store for Xcode
       # Opening the App Store is annoying, so ignore option_auto_install here
-      echo "You will need to install Xcode 4.3 or newer to build Boot to Gecko on Mac OS X 10.7."
+      echo "You will need to install Xcode 4.3 or newer to build Boot to Gecko on your version of OS X."
       prompt_question "Do you want to open Xcode in the Mac App Store? [Y/n] " Y
       if [[ $answer = Y ]]; then
-          # Xcode 4.3 iTunes http URL: http://itunes.apple.com/us/app/xcode/id497799835?mt=12
+          # Xcode iTunes http URL: http://itunes.apple.com/us/app/xcode/id497799835?mt=12
           # Mac App Store URL: macappstore://itunes.apple.com/app/id497799835?mt=12
           run_command open macappstore://itunes.apple.com/app/id497799835\?mt\=12
       fi
@@ -243,6 +262,47 @@ install_xcode() {
   echo "  3. If it doesn't, open the Preferences, go to the Downloads panel, and install them."
   echo ""
   echo "Then run this script again to continue configuring to build Boot2Gecko."
+}
+
+download_ten_six_sdk () {
+    dmgpath="$1"
+    echo "You need to download the 10.6 SDK.  To do this, you'll need to download"
+    echo "the Xcode 4.3 installer.  Download it to the default location (~/Downloads)"
+    prompt_question "Do you want to open the Apple Developer Site to download Xcode 4.3? [Y/n] " Y
+    if [[ $answer = Y ]] ; then
+        run_command open https://developer.apple.com/downloads/download.action\?path=Developer_Tools/xcode_4.3_for_lion_21266/xcode_43_lion.dmg
+    fi
+    echo "When this is downloaded, rerun this script.  If you had to download to an"
+    echo "alternate location, use the XCODE43_DMG_LOCATION environment variable"
+}
+
+install_ten_six_sdk () {
+    dmgpath=${XCODE43_DMG_LOCATION:-~/Downloads/xcode_43_lion.dmg}
+    if [[ ! -f $dmgpath ]] ; then
+        download_ten_six_sdk $dmgpath
+        exit 1
+    fi
+    echo "Installing 10.6 sdk"
+    if [ "$option_dry_run" == "yes" ] ; then
+        mp="no_tmp_file_for_dry_run"
+    else
+        mp=$(mktemp -d -t xcode43_mount)
+    fi
+    run_command hdiutil attach "$dmgpath" -mountpoint "$mp"
+    sdk_dir="$mp/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.6.sdk"
+    target="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/"
+    echo "Beginning to copy SDK over"
+    run_command sudo cp -a "$sdk_dir" "$target"
+    if [ $? -eq 0 ] ; then
+        echo "Done"
+    else
+        echo "Failed to copy 10.6 SDK"
+    fi
+    run_command hdiutil unmount "$mp" &&
+    run_command rm -rf "$mp"
+    if [ $? -ne 0 ] ; then
+        echo "Failed to unmount $dmgpath from $mp"
+    fi
 }
 
 check_xcode() {
@@ -279,8 +339,27 @@ check_xcode() {
       osx_106_sdk=$xcode_dev_path/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.6.sdk
       osx_107_sdk=$xcode_dev_path/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk
       osx_108_sdk=$xcode_dev_path/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk
+      osx_109_sdk=$xcode_dev_path/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk
     fi
-        
+
+    if [[ $osx_version != "10.9" ]]; then
+        test -d $osx_106_sdk
+        if [ $? -ne 0 ] ; then
+            if [ "$option_auto_install" = "no" ]; then
+                echo "You don't have the 10.6 SDK.  This means that you're going to"
+                echo "see lots of error messages and possibly have build issues."
+                prompt_question "Do you want to install it? [Y/n] " Y
+            else
+                echo "Automatically install 10.6 SDK"
+                answer=Y
+            fi
+            if [[ $answer == Y ]] ; then
+                install_ten_six_sdk
+                exit 1
+            fi
+        fi
+    fi
+
     # Start with the 10.6 SDK and fall back toward newer and newer
     # ones until we find one
     
@@ -290,6 +369,8 @@ check_xcode() {
       osx_sdk=$osx_107_sdk
     elif [ -d "$osx_108_sdk" ]; then
       osx_sdk=$osx_108_sdk
+    elif [ -d "$osx_109_sdk" ]; then
+      osx_sdk=$osx_109_sdk
     fi
     
     # Peel the OS X SDK version out of the path so we don't have to mess with it
@@ -379,7 +460,7 @@ install_homebrew() {
         )
     fi
 
-    installer_url="https://raw.github.com/mxcl/homebrew/go"
+    installer_url="https://raw.github.com/mxcl/homebrew/go/install"
 
     run_command curl -fsSL $installer_url -o $tmp_installer
     run_command ruby $tmp_installer
